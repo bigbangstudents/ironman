@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Iron Man Particle Glove</title>
+    <title>Iron Man Gauntlet HUD</title>
     <style>
         body {
             margin: 0;
@@ -21,6 +21,7 @@
             padding: 15px;
             border-radius: 8px;
             border: 1px solid #00ffff;
+            box-shadow: 0 0 10px rgba(0, 255, 255, 0.5);
         }
         #canvas-container {
             position: absolute;
@@ -33,26 +34,38 @@
         button {
             background-color: #ff0000;
             color: white;
-            border: none;
+            border: 2px solid #ffcc00;
             padding: 10px 20px;
             cursor: pointer;
             font-weight: bold;
             border-radius: 4px;
             margin-bottom: 10px;
+            width: 100%;
         }
         button:hover {
             background-color: #cc0000;
         }
+        #webcam-container {
+            text-align: center;
+            margin-top: 5px;
+        }
         #webcam-container canvas {
             border-radius: 4px;
-            width: 100px; /* Scale down webcam so it doesn't block the 3D view */
-            height: 100px;
+            width: 120px; /* Scale down webcam so it doesn't block the 3D view */
+            height: 120px;
+            border: 1px solid #ffcc00;
         }
         #state-display {
-            font-size: 1.2rem;
-            color: #00ffff;
+            font-size: 1rem;
+            color: #ffcc00;
+            margin-top: 5px;
             margin-bottom: 10px;
             font-weight: bold;
+            text-transform: uppercase;
+        }
+        #label-container div {
+            margin-bottom: 3px;
+            font-size: 0.9rem;
         }
     </style>
     <!-- Load Three.js -->
@@ -64,9 +77,9 @@
 <body>
 
     <div id="ui-container">
-        <div>Teachable Machine AI</div>
-        <button type="button" onclick="init()">Initialize Suit HUD (Start)</button>
-        <div id="state-display">System State: BACKGROUND</div>
+        <div>SYSTEM STATUS:</div>
+        <div id="state-display">Awaiting Initialization</div>
+        <button type="button" onclick="initAI()">Boot Up HUD (Start)</button>
         <div id="webcam-container"></div>
         <div id="label-container"></div>
     </div>
@@ -84,78 +97,175 @@
     const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(window.devicePixelRatio);
     document.getElementById("canvas-container").appendChild(renderer.domElement);
 
-    // Camera positioning
-    camera.position.z = 50;
+    // Camera positioning - pull back to see whole gauntlet
+    camera.position.set(0, 5, 60);
 
-    // --- 3. PARTICLE SYSTEM (THE GLOVE) ---
-    // For this example, we generate a blocky "hand/glove" shape out of particles
-    const particleCount = 5000;
+    // --- 3. PARTICLE SYSTEM (THE GAUNTLET GEOMETRY FIX) ---
+    // Instead of random points in a box, we build a hand shape mathematically.
+    
     const geometry = new THREE.BufferGeometry();
-    const positions = new Float32Array(particleCount * 3);
-    const originalPositions = new Float32Array(particleCount * 3);
-    const velocities = new Float32Array(particleCount * 3);
-    const colors = new Float32Array(particleCount * 3);
+    const posArray = []; // Temporary array to build geometry
+    const colorsArray = [];
 
     const color1 = new THREE.Color(0xff0000); // Iron Man Red
     const color2 = new THREE.Color(0xffcc00); // Iron Man Gold
 
-    for (let i = 0; i < particleCount; i++) {
-        // Generate a rough glove-like bounds (a cylinder-ish base with some finger extrusions)
-        let x = (Math.random() - 0.5) * 20;
-        let y = (Math.random() - 0.5) * 30;
-        let z = (Math.random() - 0.5) * 10;
-
-        positions[i * 3] = x;
-        positions[i * 3 + 1] = y;
-        positions[i * 3 + 2] = z;
-
-        originalPositions[i * 3] = x;
-        originalPositions[i * 3 + 1] = y;
-        originalPositions[i * 3 + 2] = z;
-
-        // Color randomly Red or Gold
-        const mixedColor = Math.random() > 0.5 ? color1 : color2;
-        colors[i * 3] = mixedColor.r;
-        colors[i * 3 + 1] = mixedColor.g;
-        colors[i * 3 + 2] = mixedColor.b;
+    // Helper function to add a point with random red/gold colors
+    function addPoint(x, y, z, redProbability = 0.6) {
+        posArray.push(x, y, z);
+        const mixedColor = Math.random() < redProbability ? color1 : color2;
+        colorsArray.push(mixedColor.r, mixedColor.g, mixedColor.b);
     }
 
-    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    // A. Main Gauntlet Cuff & Palm (Tapered oval cylinder)
+    for (let i = 0; i < 6000; i++) {
+        let radiusX = 8;
+        let radiusZ = 3.5;
+        let angle = Math.random() * Math.PI * 2;
+        let p = Math.pow(Math.random(), 0.5); // density distribution towards center
+        
+        // Cuff starts lower, goes up to palm base
+        let y = (Math.random() - 0.5) * 20; // Y from -10 to +10
 
-    const material = new THREE.PointsMaterial({
-        size: 0.5,
-        vertexColors: true,
-        transparent: true,
-        opacity: 0.8
+        // Taper the cuff section (bottom half)
+        let taper = 1.0;
+        if (y < -2) {
+            taper = 1.0 + (y + 2) * 0.05; // Slightly narrower at very bottom
+        }
+
+        let x = Math.cos(angle) * p * radiusX * taper;
+        let z = Math.sin(angle) * p * radiusZ * taper;
+
+        // Give the palm some curvature on Z
+        z += Math.cos(x * 0.15) * 1.5;
+
+        addPoint(x, y, z);
+    }
+
+    // B. Main Fingers (4 cylindrical extensions)
+    const fingerBaseY = 10;
+    const fingerSpecs = [
+        { xOffset: -6.0, length: 11, width: 2.2, rProb: 0.8 }, // Pinky
+        { xOffset: -2.0, length: 15, width: 2.5, rProb: 0.6 }, // Ring
+        { xOffset: 2.0, length: 16.5, width: 2.6, rProb: 0.4 }, // Middle (Gold probability high)
+        { xOffset: 6.0, length: 14, width: 2.4, rProb: 0.7 }  // Index
+    ];
+
+    fingerSpecs.forEach(f => {
+        for (let i = 0; i < 2000; i++) {
+            let angle = Math.random() * Math.PI * 2;
+            let radius = f.width / 2;
+            let p = Math.pow(Math.random(), 0.7); // make hollowish or solid
+            
+            // Generate basic cylinder on Y-up
+            let rx = Math.cos(angle) * p * radius;
+            let rz = Math.sin(angle) * p * radius * 0.8; // flatter profile
+
+            let px = f.xOffset + rx;
+            let py = fingerBaseY + Math.random() * f.length;
+            let pz = rz;
+
+            // Curl the fingers slightly forward
+            pz += Math.pow((py - fingerBaseY)/f.length, 2) * 5;
+
+            addPoint(px, py, pz, f.rProb);
+        }
     });
 
-    const gloveParticles = new THREE.Points(geometry, material);
-    scene.add(gloveParticles);
+    // C. Thumb (Angled out from side of gauntlet)
+    for (let i = 0; i < 2500; i++) {
+        let yStart = -1; // Thumb starts mid-palm
+        let length = 13;
+        let width = 2.8;
+
+        let p = Math.pow(Math.random(), 0.7);
+        let progress = Math.random(); // 0 (base) to 1 (tip)
+        
+        // Basic cylinder shape along its local Y axis
+        let angle = Math.random() * Math.PI * 2;
+        let radius = width / 2;
+        let localRX = Math.cos(angle) * p * radius;
+        let localRZ = Math.sin(angle) * p * radius * 0.8;
+        let localRY = progress * length;
+
+        // Angle the thumb local frame (rotate around Z, lean on Y)
+        let zAngle = Math.PI / 3.5; // Angled out (about 50 degrees)
+        let LeanY = progress * Math.cos(zAngle);
+        let LeanX = progress * Math.sin(zAngle);
+
+        // Position base at right side (assuming right hand gauntlet)
+        let baseX = 8.5;
+        
+        let px = baseX + localRY * Math.sin(zAngle) + localRX * Math.cos(zAngle);
+        let py = yStart + localRY * Math.cos(zAngle) + localRX * -Math.sin(zAngle);
+        let pz = localRZ;
+
+        // Angle slightly forward
+        pz += progress * progress * 2.5;
+
+        addPoint(px, py, pz, 0.6);
+    }
+
+    // Finalize Geometry Conversion
+    const positionsArray = new Float32Array(posArray);
+    const originalPositions = new Float32Array(posArray); // Keep geometry structure
+    const particleCount = positionsArray.length / 3;
+    const velocities = new Float32Array(particleCount * 3);
+    const colors = new Float32Array(colorsArray);
+
+    geometry.setAttribute('position', new THREE.BufferAttribute(positionsArray, 3));
+    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+    // Material with slight particle glow effect
+    const material = new THREE.PointsMaterial({
+        size: 0.6,
+        vertexColors: true,
+        transparent: true,
+        opacity: 0.9,
+        blending: THREE.AdditiveBlending, // Makes points look bright/glow when overlapping
+        depthWrite: false
+    });
+
+    const gauntletParticles = new THREE.Points(geometry, material);
+    scene.add(gauntletParticles);
 
     // --- 4. TEACHABLE MACHINE SETUP ---
     const URL = "https://teachablemachine.withgoogle.com/models/MvoUOZfC_/";
     let model, webcam, labelContainer, maxPredictions;
 
-    async function init() {
-        const modelURL = URL + "model.json";
-        const metadataURL = URL + "metadata.json";
+    async function initAI() {
+        const stateDisplay = document.getElementById("state-display");
+        stateDisplay.innerText = "Connecting to Neural Net...";
+        stateDisplay.style.color = "#00ffff";
 
-        model = await tmImage.load(modelURL, metadataURL);
-        maxPredictions = model.getTotalClasses();
+        try {
+            const modelURL = URL + "model.json";
+            const metadataURL = URL + "metadata.json";
 
-        const flip = true; 
-        webcam = new tmImage.Webcam(200, 200, flip);
-        await webcam.setup(); 
-        await webcam.play();
-        window.requestAnimationFrame(tmLoop);
+            model = await tmImage.load(modelURL, metadataURL);
+            maxPredictions = model.getTotalClasses();
 
-        document.getElementById("webcam-container").appendChild(webcam.canvas);
-        labelContainer = document.getElementById("label-container");
-        for (let i = 0; i < maxPredictions; i++) {
-            labelContainer.appendChild(document.createElement("div"));
+            const flip = true; 
+            webcam = new tmImage.Webcam(200, 200, flip);
+            await webcam.setup(); 
+            await webcam.play();
+            window.requestAnimationFrame(tmLoop);
+
+            document.getElementById("webcam-container").appendChild(webcam.canvas);
+            labelContainer = document.getElementById("label-container");
+            labelContainer.innerHTML = ""; // Clear
+            for (let i = 0; i < maxPredictions; i++) {
+                labelContainer.appendChild(document.createElement("div"));
+            }
+            stateDisplay.innerText = "System State: BACKGROUND";
+            stateDisplay.style.color = "#ffcc00";
+        } catch (error) {
+            console.error(error);
+            stateDisplay.innerText = "ERROR: Webcam/AI fail";
+            stateDisplay.style.color = "#ff0000";
         }
     }
 
@@ -170,10 +280,11 @@
         let bestPrediction = { className: "", probability: 0 };
 
         for (let i = 0; i < maxPredictions; i++) {
-            const classPrediction = prediction[i].className + ": " + prediction[i].probability.toFixed(2);
+            const currentProb = prediction[i].probability;
+            const classPrediction = prediction[i].className + ": " + currentProb.toFixed(2);
             labelContainer.childNodes[i].innerHTML = classPrediction;
 
-            if (prediction[i].probability > bestPrediction.probability) {
+            if (currentProb > bestPrediction.probability) {
                 bestPrediction = prediction[i];
             }
         }
@@ -190,20 +301,22 @@
         // Rule 1: Trigger explosion ONLY if currently in BACKGROUND
         if (appState === "BACKGROUND" && aiCommand === "Explosion") {
             appState = "EXPLODING";
-            stateDisplay.innerText = "System State: EXPLODING";
+            stateDisplay.innerText = "Status: DEPLOYING CHUNKS";
+            stateDisplay.style.color = "#ff0000";
             
-            // Assign random velocities for the explosion
+            // Assign massive explosive velocities to the gauntlet structure
             for (let i = 0; i < particleCount; i++) {
-                velocities[i * 3] = (Math.random() - 0.5) * 5;     // X velocity
-                velocities[i * 3 + 1] = (Math.random() - 0.5) * 5; // Y velocity
-                velocities[i * 3 + 2] = (Math.random() - 0.5) * 5; // Z velocity
+                velocities[i * 3] = (Math.random() - 0.5) * 15;     // X velocity
+                velocities[i * 3 + 1] = (Math.random() - 0.5) * 15; // Y velocity
+                velocities[i * 3 + 2] = (Math.random() - 0.5) * 15; // Z velocity
             }
 
-            // After a short time, settle into EXPLODED state
+            // After 2 seconds, the particles are scattered, state changes to AWAITING recall
             setTimeout(() => {
                 if (appState === "EXPLODING") {
                     appState = "EXPLODED";
-                    stateDisplay.innerText = "System State: EXPLODED (Awaiting Gravity Pull)";
+                    stateDisplay.innerText = "Status: SCATTERED (Standby)";
+                    stateDisplay.style.color = "#00ff00"; // Green for ready to recall
                 }
             }, 2000); 
         }
@@ -211,12 +324,15 @@
         // Rule 2: Trigger Gravity Pull ONLY if currently EXPLODED
         if (appState === "EXPLODED" && aiCommand === "Gravity Pull") {
             appState = "ASSEMBLING";
-            stateDisplay.innerText = "System State: ASSEMBLING";
+            stateDisplay.innerText = "Status: GRAVITY RECALL ACTIVATED";
+            stateDisplay.style.color = "#00ffff"; // Light blue for recall
 
-            // Allow time for assembly to finish before returning to background
+            // The 'animate' loop handles the pulling based on this state.
+            // Allow time for total assembly before returning to normal rotation
             setTimeout(() => {
                 appState = "BACKGROUND";
-                stateDisplay.innerText = "System State: BACKGROUND";
+                stateDisplay.innerText = "Status: LOCKED (BACKGROUND)";
+                stateDisplay.style.color = "#ffcc00";
             }, 3000);
         }
     }
@@ -225,40 +341,46 @@
     function animate() {
         requestAnimationFrame(animate);
 
-        const positions = gloveParticles.geometry.attributes.position.array;
+        const positions = gauntletParticles.geometry.attributes.position.array;
 
         if (appState === "BACKGROUND") {
-            // Idle state: Slowly rotate the glove
-            gloveParticles.rotation.y += 0.01;
-            gloveParticles.rotation.x += 0.005;
+            // Idle state: Slowly rotate the gauntlet form to show off the hand shape
+            gauntletParticles.rotation.y += 0.005;
+            gauntletParticles.rotation.x = -Math.PI / 16; // Slight angle towards viewer
         } 
         else if (appState === "EXPLODING" || appState === "EXPLODED") {
-            // Apply velocities to push particles outward
-            // Add slight friction to slow them down eventually
+            // Apply velocities to push particles outward.
+            // Apply heavy friction to create chunks flying then slowing to a halt.
             for (let i = 0; i < particleCount; i++) {
-                velocities[i * 3] *= 0.95;     // friction X
-                velocities[i * 3 + 1] *= 0.95; // friction Y
-                velocities[i * 3 + 2] *= 0.95; // friction Z
+                velocities[i * 3] *= 0.94;     // friction X
+                velocities[i * 3 + 1] *= 0.94; // friction Y
+                velocities[i * 3 + 2] *= 0.94; // friction Z
 
                 positions[i * 3] += velocities[i * 3];
                 positions[i * 3 + 1] += velocities[i * 3 + 1];
                 positions[i * 3 + 2] += velocities[i * 3 + 2];
             }
-            gloveParticles.geometry.attributes.position.needsUpdate = true;
+            // Add chaos rotation
+            gauntletParticles.rotation.y += 0.05;
+            gauntletParticles.rotation.x += 0.03;
+            
+            gauntletParticles.geometry.attributes.position.needsUpdate = true;
         } 
         else if (appState === "ASSEMBLING") {
-            // Linear Interpolation (Lerp) to pull particles back to original positions
+            // Linear Interpolation (Lerp) with high easing to pull scattered points
+            // back exactly to originalPositions
+            let pullSpeed = 0.06;
             for (let i = 0; i < particleCount; i++) {
                 // Lerp formula: current + (target - current) * speed
-                positions[i * 3] += (originalPositions[i * 3] - positions[i * 3]) * 0.05;
-                positions[i * 3 + 1] += (originalPositions[i * 3 + 1] - positions[i * 3 + 1]) * 0.05;
-                positions[i * 3 + 2] += (originalPositions[i * 3 + 2] - positions[i * 3 + 2]) * 0.05;
+                positions[i * 3] += (originalPositions[i * 3] - positions[i * 3]) * pullSpeed;
+                positions[i * 3 + 1] += (originalPositions[i * 3 + 1] - positions[i * 3 + 1]) * pullSpeed;
+                positions[i * 3 + 2] += (originalPositions[i * 3 + 2] - positions[i * 3 + 2]) * pullSpeed;
             }
-            // Rotate back to normal orientation gracefully
-            gloveParticles.rotation.y += (0 - gloveParticles.rotation.y) * 0.05;
-            gloveParticles.rotation.x += (0 - gloveParticles.rotation.x) * 0.05;
+            // Rotate back to locked orientation gracefully
+            gauntletParticles.rotation.y += (0 - gauntletParticles.rotation.y) * 0.08;
+            gauntletParticles.rotation.x += (-Math.PI / 16 - gauntletParticles.rotation.x) * 0.08;
             
-            gloveParticles.geometry.attributes.position.needsUpdate = true;
+            gauntletParticles.geometry.attributes.position.needsUpdate = true;
         }
 
         renderer.render(scene, camera);
