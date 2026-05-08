@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Iron Man Particle Glove</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden; /* Hide scrollbars for the 3D canvas */
+            background-color: #000;
+            color: #fff;
+            font-family: sans-serif;
+        }
+        #ui-container {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            z-index: 100;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid #00ffff;
+        }
+        #canvas-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            z-index: 1;
+        }
+        button {
+            background-color: #ff0000;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            cursor: pointer;
+            font-weight: bold;
+            border-radius: 4px;
+            margin-bottom: 10px;
+        }
+        button:hover {
+            background-color: #cc0000;
+        }
+        #webcam-container canvas {
+            border-radius: 4px;
+            width: 100px; /* Scale down webcam so it doesn't block the 3D view */
+            height: 100px;
+        }
+        #state-display {
+            font-size: 1.2rem;
+            color: #00ffff;
+            margin-bottom: 10px;
+            font-weight: bold;
+        }
+    </style>
+    <!-- Load Three.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- Load Teachable Machine Libraries -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@latest/dist/teachablemachine-image.min.js"></script>
+</head>
+<body>
+
+    <div id="ui-container">
+        <div>Teachable Machine AI</div>
+        <button type="button" onclick="init()">Initialize Suit HUD (Start)</button>
+        <div id="state-display">System State: BACKGROUND</div>
+        <div id="webcam-container"></div>
+        <div id="label-container"></div>
+    </div>
+
+    <!-- 3D Environment goes here -->
+    <div id="canvas-container"></div>
+
+<script type="text/javascript">
+    // --- 1. STATE MACHINE LOGIC ---
+    let appState = "BACKGROUND"; // States: BACKGROUND, EXPLODING, EXPLODED, ASSEMBLING
+    const PREDICTION_THRESHOLD = 0.85; // 85% confidence required to trigger state change
+
+    // --- 2. THREE.JS SETUP ---
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.getElementById("canvas-container").appendChild(renderer.domElement);
+
+    // Camera positioning
+    camera.position.z = 50;
+
+    // --- 3. PARTICLE SYSTEM (THE GLOVE) ---
+    // For this example, we generate a blocky "hand/glove" shape out of particles
+    const particleCount = 5000;
+    const geometry = new THREE.BufferGeometry();
+    const positions = new Float32Array(particleCount * 3);
+    const originalPositions = new Float32Array(particleCount * 3);
+    const velocities = new Float32Array(particleCount * 3);
+    const colors = new Float32Array(particleCount * 3);
+
+    const color1 = new THREE.Color(0xff0000); // Iron Man Red
+    const color2 = new THREE.Color(0xffcc00); // Iron Man Gold
+
+    for (let i = 0; i < particleCount; i++) {
+        // Generate a rough glove-like bounds (a cylinder-ish base with some finger extrusions)
+        let x = (Math.random() - 0.5) * 20;
+        let y = (Math.random() - 0.5) * 30;
+        let z = (Math.random() - 0.5) * 10;
+
+        positions[i * 3] = x;
+        positions[i * 3 + 1] = y;
+        positions[i * 3 + 2] = z;
+
+        originalPositions[i * 3] = x;
+        originalPositions[i * 3 + 1] = y;
+        originalPositions[i * 3 + 2] = z;
+
+        // Color randomly Red or Gold
+        const mixedColor = Math.random() > 0.5 ? color1 : color2;
+        colors[i * 3] = mixedColor.r;
+        colors[i * 3 + 1] = mixedColor.g;
+        colors[i * 3 + 2] = mixedColor.b;
+    }
+
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+    const material = new THREE.PointsMaterial({
+        size: 0.5,
+        vertexColors: true,
+        transparent: true,
+        opacity: 0.8
+    });
+
+    const gloveParticles = new THREE.Points(geometry, material);
+    scene.add(gloveParticles);
+
+    // --- 4. TEACHABLE MACHINE SETUP ---
+    const URL = "https://teachablemachine.withgoogle.com/models/MvoUOZfC_/";
+    let model, webcam, labelContainer, maxPredictions;
+
+    async function init() {
+        const modelURL = URL + "model.json";
+        const metadataURL = URL + "metadata.json";
+
+        model = await tmImage.load(modelURL, metadataURL);
+        maxPredictions = model.getTotalClasses();
+
+        const flip = true; 
+        webcam = new tmImage.Webcam(200, 200, flip);
+        await webcam.setup(); 
+        await webcam.play();
+        window.requestAnimationFrame(tmLoop);
+
+        document.getElementById("webcam-container").appendChild(webcam.canvas);
+        labelContainer = document.getElementById("label-container");
+        for (let i = 0; i < maxPredictions; i++) {
+            labelContainer.appendChild(document.createElement("div"));
+        }
+    }
+
+    async function tmLoop() {
+        webcam.update();
+        await predict();
+        window.requestAnimationFrame(tmLoop);
+    }
+
+    async function predict() {
+        const prediction = await model.predict(webcam.canvas);
+        let bestPrediction = { className: "", probability: 0 };
+
+        for (let i = 0; i < maxPredictions; i++) {
+            const classPrediction = prediction[i].className + ": " + prediction[i].probability.toFixed(2);
+            labelContainer.childNodes[i].innerHTML = classPrediction;
+
+            if (prediction[i].probability > bestPrediction.probability) {
+                bestPrediction = prediction[i];
+            }
+        }
+
+        // --- STATE LOGIC TRIGGERED BY AI ---
+        if (bestPrediction.probability > PREDICTION_THRESHOLD) {
+            triggerStateChange(bestPrediction.className);
+        }
+    }
+
+    function triggerStateChange(aiCommand) {
+        const stateDisplay = document.getElementById("state-display");
+
+        // Rule 1: Trigger explosion ONLY if currently in BACKGROUND
+        if (appState === "BACKGROUND" && aiCommand === "Explosion") {
+            appState = "EXPLODING";
+            stateDisplay.innerText = "System State: EXPLODING";
+            
+            // Assign random velocities for the explosion
+            for (let i = 0; i < particleCount; i++) {
+                velocities[i * 3] = (Math.random() - 0.5) * 5;     // X velocity
+                velocities[i * 3 + 1] = (Math.random() - 0.5) * 5; // Y velocity
+                velocities[i * 3 + 2] = (Math.random() - 0.5) * 5; // Z velocity
+            }
+
+            // After a short time, settle into EXPLODED state
+            setTimeout(() => {
+                if (appState === "EXPLODING") {
+                    appState = "EXPLODED";
+                    stateDisplay.innerText = "System State: EXPLODED (Awaiting Gravity Pull)";
+                }
+            }, 2000); 
+        }
+
+        // Rule 2: Trigger Gravity Pull ONLY if currently EXPLODED
+        if (appState === "EXPLODED" && aiCommand === "Gravity Pull") {
+            appState = "ASSEMBLING";
+            stateDisplay.innerText = "System State: ASSEMBLING";
+
+            // Allow time for assembly to finish before returning to background
+            setTimeout(() => {
+                appState = "BACKGROUND";
+                stateDisplay.innerText = "System State: BACKGROUND";
+            }, 3000);
+        }
+    }
+
+    // --- 5. 3D ANIMATION LOOP ---
+    function animate() {
+        requestAnimationFrame(animate);
+
+        const positions = gloveParticles.geometry.attributes.position.array;
+
+        if (appState === "BACKGROUND") {
+            // Idle state: Slowly rotate the glove
+            gloveParticles.rotation.y += 0.01;
+            gloveParticles.rotation.x += 0.005;
+        } 
+        else if (appState === "EXPLODING" || appState === "EXPLODED") {
+            // Apply velocities to push particles outward
+            // Add slight friction to slow them down eventually
+            for (let i = 0; i < particleCount; i++) {
+                velocities[i * 3] *= 0.95;     // friction X
+                velocities[i * 3 + 1] *= 0.95; // friction Y
+                velocities[i * 3 + 2] *= 0.95; // friction Z
+
+                positions[i * 3] += velocities[i * 3];
+                positions[i * 3 + 1] += velocities[i * 3 + 1];
+                positions[i * 3 + 2] += velocities[i * 3 + 2];
+            }
+            gloveParticles.geometry.attributes.position.needsUpdate = true;
+        } 
+        else if (appState === "ASSEMBLING") {
+            // Linear Interpolation (Lerp) to pull particles back to original positions
+            for (let i = 0; i < particleCount; i++) {
+                // Lerp formula: current + (target - current) * speed
+                positions[i * 3] += (originalPositions[i * 3] - positions[i * 3]) * 0.05;
+                positions[i * 3 + 1] += (originalPositions[i * 3 + 1] - positions[i * 3 + 1]) * 0.05;
+                positions[i * 3 + 2] += (originalPositions[i * 3 + 2] - positions[i * 3 + 2]) * 0.05;
+            }
+            // Rotate back to normal orientation gracefully
+            gloveParticles.rotation.y += (0 - gloveParticles.rotation.y) * 0.05;
+            gloveParticles.rotation.x += (0 - gloveParticles.rotation.x) * 0.05;
+            
+            gloveParticles.geometry.attributes.position.needsUpdate = true;
+        }
+
+        renderer.render(scene, camera);
+    }
+
+    // Start 3D loop
+    animate();
+
+    // Handle Window Resize
+    window.addEventListener('resize', onWindowResize, false);
+    function onWindowResize() {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+    }
+</script>
+
+</body>
+</html>
