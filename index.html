@@ -68,9 +68,7 @@
             font-size: 0.9rem;
         }
     </style>
-    <!-- Load Three.js -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    <!-- Load Teachable Machine Libraries -->
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@latest/dist/teachablemachine-image.min.js"></script>
 </head>
@@ -84,7 +82,6 @@
         <div id="label-container"></div>
     </div>
 
-    <!-- 3D Environment goes here -->
     <div id="canvas-container"></div>
 
 <script type="text/javascript">
@@ -103,115 +100,106 @@
     // Camera positioning - pull back to see whole gauntlet
     camera.position.set(0, 5, 60);
 
-    // --- 3. PARTICLE SYSTEM (THE GAUNTLET GEOMETRY FIX) ---
-    // Instead of random points in a box, we build a hand shape mathematically.
-    
+    // --- 3. PARTICLE SYSTEM (THE GAUNTLET GEOMETRY & COLOR) ---
     const geometry = new THREE.BufferGeometry();
-    const posArray = []; // Temporary array to build geometry
+    const posArray = []; 
     const colorsArray = [];
 
-    const color1 = new THREE.Color(0xff0000); // Iron Man Red
-    const color2 = new THREE.Color(0xffcc00); // Iron Man Gold
+    // Updated colors to match reference image
+    const colorRed = new THREE.Color(0xaa1a1a); // Deep polished crimson
+    const colorGold = new THREE.Color(0xcc9c6c); // Warm brass-gold
 
-    // Helper function to add a point with random red/gold colors
-    function addPoint(x, y, z, redProbability = 0.6) {
+    // Helper function to add a point with probability-based coloring
+    function addPoint(x, y, z, redProbability) {
         posArray.push(x, y, z);
-        const mixedColor = Math.random() < redProbability ? color1 : color2;
+        const mixedColor = Math.random() < redProbability ? colorRed : colorGold;
         colorsArray.push(mixedColor.r, mixedColor.g, mixedColor.b);
     }
 
-    // A. Main Gauntlet Cuff & Palm (Tapered oval cylinder)
+    // A. Main Gauntlet Cuff & Palm (Mostly Gold - 10% Red)
     for (let i = 0; i < 6000; i++) {
         let radiusX = 8;
         let radiusZ = 3.5;
         let angle = Math.random() * Math.PI * 2;
-        let p = Math.pow(Math.random(), 0.5); // density distribution towards center
+        let p = Math.pow(Math.random(), 0.5); 
         
-        // Cuff starts lower, goes up to palm base
-        let y = (Math.random() - 0.5) * 20; // Y from -10 to +10
+        let y = (Math.random() - 0.5) * 20; 
 
-        // Taper the cuff section (bottom half)
         let taper = 1.0;
         if (y < -2) {
-            taper = 1.0 + (y + 2) * 0.05; // Slightly narrower at very bottom
+            taper = 1.0 + (y + 2) * 0.05; 
         }
 
         let x = Math.cos(angle) * p * radiusX * taper;
         let z = Math.sin(angle) * p * radiusZ * taper;
 
-        // Give the palm some curvature on Z
         z += Math.cos(x * 0.15) * 1.5;
 
-        addPoint(x, y, z);
+        // 10% chance of red for the main palm/cuff
+        addPoint(x, y, z, 0.1); 
     }
 
-    // B. Main Fingers (4 cylindrical extensions)
+    // B. Main Fingers (Solid Red - 100% Red)
     const fingerBaseY = 10;
     const fingerSpecs = [
-        { xOffset: -6.0, length: 11, width: 2.2, rProb: 0.8 }, // Pinky
-        { xOffset: -2.0, length: 15, width: 2.5, rProb: 0.6 }, // Ring
-        { xOffset: 2.0, length: 16.5, width: 2.6, rProb: 0.4 }, // Middle (Gold probability high)
-        { xOffset: 6.0, length: 14, width: 2.4, rProb: 0.7 }  // Index
+        { xOffset: -6.0, length: 11, width: 2.2 }, // Pinky
+        { xOffset: -2.0, length: 15, width: 2.5 }, // Ring
+        { xOffset: 2.0, length: 16.5, width: 2.6 }, // Middle
+        { xOffset: 6.0, length: 14, width: 2.4 }  // Index
     ];
 
     fingerSpecs.forEach(f => {
         for (let i = 0; i < 2000; i++) {
             let angle = Math.random() * Math.PI * 2;
             let radius = f.width / 2;
-            let p = Math.pow(Math.random(), 0.7); // make hollowish or solid
+            let p = Math.pow(Math.random(), 0.7); 
             
-            // Generate basic cylinder on Y-up
             let rx = Math.cos(angle) * p * radius;
-            let rz = Math.sin(angle) * p * radius * 0.8; // flatter profile
+            let rz = Math.sin(angle) * p * radius * 0.8; 
 
             let px = f.xOffset + rx;
             let py = fingerBaseY + Math.random() * f.length;
             let pz = rz;
 
-            // Curl the fingers slightly forward
             pz += Math.pow((py - fingerBaseY)/f.length, 2) * 5;
 
-            addPoint(px, py, pz, f.rProb);
+            // 100% Red for all fingers
+            addPoint(px, py, pz, 1.0);
         }
     });
 
-    // C. Thumb (Angled out from side of gauntlet)
+    // C. Thumb (Solid Red - 100% Red)
     for (let i = 0; i < 2500; i++) {
-        let yStart = -1; // Thumb starts mid-palm
+        let yStart = -1; 
         let length = 13;
         let width = 2.8;
 
         let p = Math.pow(Math.random(), 0.7);
-        let progress = Math.random(); // 0 (base) to 1 (tip)
+        let progress = Math.random(); 
         
-        // Basic cylinder shape along its local Y axis
         let angle = Math.random() * Math.PI * 2;
         let radius = width / 2;
         let localRX = Math.cos(angle) * p * radius;
         let localRZ = Math.sin(angle) * p * radius * 0.8;
         let localRY = progress * length;
 
-        // Angle the thumb local frame (rotate around Z, lean on Y)
-        let zAngle = Math.PI / 3.5; // Angled out (about 50 degrees)
-        let LeanY = progress * Math.cos(zAngle);
-        let LeanX = progress * Math.sin(zAngle);
-
-        // Position base at right side (assuming right hand gauntlet)
+        let zAngle = Math.PI / 3.5; 
+        
         let baseX = 8.5;
         
         let px = baseX + localRY * Math.sin(zAngle) + localRX * Math.cos(zAngle);
         let py = yStart + localRY * Math.cos(zAngle) + localRX * -Math.sin(zAngle);
         let pz = localRZ;
 
-        // Angle slightly forward
         pz += progress * progress * 2.5;
 
-        addPoint(px, py, pz, 0.6);
+        // 100% Red for the thumb
+        addPoint(px, py, pz, 1.0);
     }
 
     // Finalize Geometry Conversion
     const positionsArray = new Float32Array(posArray);
-    const originalPositions = new Float32Array(posArray); // Keep geometry structure
+    const originalPositions = new Float32Array(posArray); 
     const particleCount = positionsArray.length / 3;
     const velocities = new Float32Array(particleCount * 3);
     const colors = new Float32Array(colorsArray);
@@ -225,7 +213,7 @@
         vertexColors: true,
         transparent: true,
         opacity: 0.9,
-        blending: THREE.AdditiveBlending, // Makes points look bright/glow when overlapping
+        blending: THREE.AdditiveBlending, 
         depthWrite: false
     });
 
@@ -256,7 +244,7 @@
 
             document.getElementById("webcam-container").appendChild(webcam.canvas);
             labelContainer = document.getElementById("label-container");
-            labelContainer.innerHTML = ""; // Clear
+            labelContainer.innerHTML = ""; 
             for (let i = 0; i < maxPredictions; i++) {
                 labelContainer.appendChild(document.createElement("div"));
             }
@@ -304,19 +292,17 @@
             stateDisplay.innerText = "Status: DEPLOYING CHUNKS";
             stateDisplay.style.color = "#ff0000";
             
-            // Assign massive explosive velocities to the gauntlet structure
             for (let i = 0; i < particleCount; i++) {
-                velocities[i * 3] = (Math.random() - 0.5) * 15;     // X velocity
-                velocities[i * 3 + 1] = (Math.random() - 0.5) * 15; // Y velocity
-                velocities[i * 3 + 2] = (Math.random() - 0.5) * 15; // Z velocity
+                velocities[i * 3] = (Math.random() - 0.5) * 15;     
+                velocities[i * 3 + 1] = (Math.random() - 0.5) * 15; 
+                velocities[i * 3 + 2] = (Math.random() - 0.5) * 15; 
             }
 
-            // After 2 seconds, the particles are scattered, state changes to AWAITING recall
             setTimeout(() => {
                 if (appState === "EXPLODING") {
                     appState = "EXPLODED";
                     stateDisplay.innerText = "Status: SCATTERED (Standby)";
-                    stateDisplay.style.color = "#00ff00"; // Green for ready to recall
+                    stateDisplay.style.color = "#00ff00"; 
                 }
             }, 2000); 
         }
@@ -325,10 +311,8 @@
         if (appState === "EXPLODED" && aiCommand === "Gravity Pull") {
             appState = "ASSEMBLING";
             stateDisplay.innerText = "Status: GRAVITY RECALL ACTIVATED";
-            stateDisplay.style.color = "#00ffff"; // Light blue for recall
+            stateDisplay.style.color = "#00ffff"; 
 
-            // The 'animate' loop handles the pulling based on this state.
-            // Allow time for total assembly before returning to normal rotation
             setTimeout(() => {
                 appState = "BACKGROUND";
                 stateDisplay.innerText = "Status: LOCKED (BACKGROUND)";
@@ -344,39 +328,31 @@
         const positions = gauntletParticles.geometry.attributes.position.array;
 
         if (appState === "BACKGROUND") {
-            // Idle state: Slowly rotate the gauntlet form to show off the hand shape
             gauntletParticles.rotation.y += 0.005;
-            gauntletParticles.rotation.x = -Math.PI / 16; // Slight angle towards viewer
+            gauntletParticles.rotation.x = -Math.PI / 16; 
         } 
         else if (appState === "EXPLODING" || appState === "EXPLODED") {
-            // Apply velocities to push particles outward.
-            // Apply heavy friction to create chunks flying then slowing to a halt.
             for (let i = 0; i < particleCount; i++) {
-                velocities[i * 3] *= 0.94;     // friction X
-                velocities[i * 3 + 1] *= 0.94; // friction Y
-                velocities[i * 3 + 2] *= 0.94; // friction Z
+                velocities[i * 3] *= 0.94;     
+                velocities[i * 3 + 1] *= 0.94; 
+                velocities[i * 3 + 2] *= 0.94; 
 
                 positions[i * 3] += velocities[i * 3];
                 positions[i * 3 + 1] += velocities[i * 3 + 1];
                 positions[i * 3 + 2] += velocities[i * 3 + 2];
             }
-            // Add chaos rotation
             gauntletParticles.rotation.y += 0.05;
             gauntletParticles.rotation.x += 0.03;
             
             gauntletParticles.geometry.attributes.position.needsUpdate = true;
         } 
         else if (appState === "ASSEMBLING") {
-            // Linear Interpolation (Lerp) with high easing to pull scattered points
-            // back exactly to originalPositions
             let pullSpeed = 0.06;
             for (let i = 0; i < particleCount; i++) {
-                // Lerp formula: current + (target - current) * speed
                 positions[i * 3] += (originalPositions[i * 3] - positions[i * 3]) * pullSpeed;
                 positions[i * 3 + 1] += (originalPositions[i * 3 + 1] - positions[i * 3 + 1]) * pullSpeed;
                 positions[i * 3 + 2] += (originalPositions[i * 3 + 2] - positions[i * 3 + 2]) * pullSpeed;
             }
-            // Rotate back to locked orientation gracefully
             gauntletParticles.rotation.y += (0 - gauntletParticles.rotation.y) * 0.08;
             gauntletParticles.rotation.x += (-Math.PI / 16 - gauntletParticles.rotation.x) * 0.08;
             
@@ -386,7 +362,6 @@
         renderer.render(scene, camera);
     }
 
-    // Start 3D loop
     animate();
 
     // Handle Window Resize
